@@ -8,7 +8,7 @@
 - 특히 고기를 소분해 놓는 경우, 지방량과 단백질량에 대한 추정이 더 힘들어짐
 
 ## Architecture
-![pci2022-18-fig8](https://github.com/user-attachments/assets/a589092f-49b9-4962-8369-a9861af2b992)
+![pci2022-18-fig8](https://github.com/user-attachments/assets/cdb36bf6-4985-4123-b21e-81e83d307148)
 - 첫 번째 U-Net 모델은 이미지에서 고기를 추출한다.
 - 두 번째 U-Net 모델은 고기가 마스크된 이미지에서 지방을 추출한다.
 - 이 후, 고기 마스크와 지방 마스크를 이용해 25cm의 눈금자를 스케일 마커로 사용하여 지방량과 단백질량을 계산한다.
