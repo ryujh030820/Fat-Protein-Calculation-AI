@@ -1,88 +1,118 @@
 import torch
+import cv2
+import mediapipe as mp
 import numpy as np
-from PIL import Image
-import matplotlib.pyplot as plt
-import torchvision.transforms as T
 
-# Load a pretrained MiDaS model for depth estimation
-midas = torch.hub.load("intel-isl/MiDaS", "MiDaS")
+# 모델 로드
+model_type = "DPT_Large"  # 사용할 모델 유형 선택 ("DPT_Large", "DPT_Hybrid", "MiDaS_small" 등)
+midas = torch.hub.load("intel-isl/MiDaS", model_type)
+
+# 장치 설정 (GPU 사용 가능 여부 확인)
+device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+midas.to(device)
 midas.eval()
 
-# Load transforms to convert the image into the format expected by the MiDaS model
-transform = torch.hub.load("intel-isl/MiDaS", "transforms").default_transform
+# 이미지 전처리를 위한 변환 로드
+midas_transforms = torch.hub.load("intel-isl/MiDaS", "transforms")
 
-# Load the image
-image_path = "background_removal/data/15.jpg"  # 이미지 경로를 본인의 경로로 변경
-image = Image.open(image_path).convert("RGB")  # Ensure image is in RGB format
+if model_type == "DPT_Large" or model_type == "DPT_Hybrid":
+    transform = midas_transforms.dpt_transform
+else:
+    transform = midas_transforms.small_transform
 
-# Resize the image so that its dimensions are divisible by 32
-resize_transform = T.Resize((int(np.ceil(image.size[1] / 32) * 32),
-                             int(np.ceil(image.size[0] / 32) * 32)))
-image_resized = resize_transform(image)
+# 입력 이미지 불러오기
+img = cv2.imread("testpng/test.jpeg")
+img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-# Convert image to NumPy array and normalize to [0, 1]
-image_np = np.asarray(image_resized) / 255.0  # Convert to NumPy array and normalize
+# 이미지 변환 및 텐서로 변환
+input_batch = transform(img_rgb).to(device)
 
-# Convert NumPy array to PyTorch Tensor and permute dimensions to [C, H, W]
-image_tensor = torch.from_numpy(image_np).permute(2, 0, 1).float()
-
-# Add a batch dimension [B, C, H, W]
-input_batch = image_tensor.unsqueeze(0)
-
-# Perform depth estimation
+# 깊이 예측
 with torch.no_grad():
     prediction = midas(input_batch)
 
-# Resize depth map to original image size and normalize
-depth_map = torch.nn.functional.interpolate(
-    prediction.unsqueeze(1),
-    size=image.size[::-1],
-    mode="bicubic",
-    align_corners=False,
-).squeeze()
+    # 원본 이미지 크기로 리사이즈
+    prediction = torch.nn.functional.interpolate(
+        prediction.unsqueeze(1),
+        size=img.shape[:2],
+        mode="bicubic",
+        align_corners=False,
+    ).squeeze()
 
-# Normalize depth map to [0, 1] for visualization
-depth_map = depth_map.numpy()
-depth_map = (depth_map - np.min(depth_map)) / (np.max(depth_map) - np.min(depth_map))
+# 결과를 NumPy 배열로 변환
+depth_map = prediction.cpu().numpy()
 
-# Display the depth map
-plt.imshow(depth_map, cmap='inferno')
-plt.axis('off')
-plt.title("Estimated Depth Map of the Meat")
-plt.show()
+# 깊이 맵을 시각화하기 위해 0-255 범위로 정규화
+depth_min = depth_map.min()
+depth_max = depth_map.max()
+depth_map = (depth_map - depth_min) / (depth_max - depth_min)
+depth_map = (depth_map * 255).astype(np.uint8)
 
-# Step 1: Hand Length in Pixels
-# Assuming we know the real length of the hand (e.g., 18 cm)
-real_hand_length_cm = 18.0
+# 깊이 맵 저장
+cv2.imwrite("depth_map.png", depth_map)
 
-# Assume you have identified the hand in the image and measured its length in pixels
-hand_length_pixels = 50  # Replace with the actual pixel length from the image
+# Mediapipe 초기화
+mp_hands = mp.solutions.hands
+mp_drawing = mp.solutions.drawing_utils
 
-# Calculate the scale ratio (cm per pixel)
-scale_ratio = real_hand_length_cm / hand_length_pixels
+# Mediapipe를 사용하여 손 랜드마크 검출
+with mp_hands.Hands(static_image_mode=True, max_num_hands=2, min_detection_confidence=0.5) as hands:
+    result = hands.process(img_rgb)
 
-# Step 2: Select Region of Interest (ROI) for meat thickness estimation
-# Assuming we select a central region of the depth map to estimate thickness
-height, width = depth_map.shape
-roi_top = int(height * 0.4)
-roi_bottom = int(height * 0.6)
-roi_left = int(width * 0.4)
-roi_right = int(width * 0.6)
+# 손바닥 길이 계산
+if result.multi_hand_landmarks:
+    hand_landmarks = result.multi_hand_landmarks[0]
 
-# Extract ROI from the depth map
-roi = depth_map[roi_top:roi_bottom, roi_left:roi_right]
+    # 손바닥 길이를 계산하기 위한 랜드마크 선택 (랜드마크 0과 9)
+    wrist = hand_landmarks.landmark[mp_hands.HandLandmark.WRIST]
+    middle_mcp = hand_landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_MCP]
 
-# Estimate average thickness from the ROI in relative units
-average_thickness_relative = np.mean(roi)
+    # 이미지 크기에 맞게 좌표 변환
+    h, w, _ = img.shape
+    wrist_coords = (int(wrist.x * w), int(wrist.y * h))
+    middle_mcp_coords = (int(middle_mcp.x * w), int(middle_mcp.y * h))
 
-# Step 3: Convert relative thickness to actual thickness (in cm)
-# Note: Depth map values are normalized, so we use them as relative depth
-# Assuming the max depth represents a thickness of approximately 10 cm
-max_thickness_estimate_cm = 10.0
-estimated_thickness_cm = average_thickness_relative * max_thickness_estimate_cm
+    # 손바닥 길이 계산 (픽셀 단위)
+    palm_length_px = np.linalg.norm(np.array(wrist_coords) - np.array(middle_mcp_coords))
 
-# Apply scale ratio to convert to real-world thickness
-real_thickness_cm = estimated_thickness_cm * scale_ratio
+    # 손바닥의 실제 길이 (밀리미터 단위) - 사용자의 실제 손바닥 길이를 입력하거나 평균 값을 사용
+    actual_palm_length_mm = 180  # 예를 들어 100mm로 설정
 
-# Display the estimated real thickness
-print(f"Estimated Average Thickness (in cm): {real_thickness_cm:.2f}")
+    # 픽셀 당 실제 거리 계산 (mm/pixel)
+    mm_per_pixel = actual_palm_length_mm / palm_length_px
+
+    print(f"손바닥 길이 (픽셀): {palm_length_px}")
+    print(f"픽셀 당 실제 거리 (mm): {mm_per_pixel}")
+
+    # 손 랜드마크를 이미지에 그리기 (옵션)
+    mp_drawing.draw_landmarks(img, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+    cv2.imwrite('hand_landmarks.png', img)
+else:
+    print("손을 검출하지 못했습니다.")
+    exit()
+
+# 고기 마스크 이미지 불러오기
+meat_mask = cv2.imread('testpng/maskedtest.png', cv2.IMREAD_GRAYSCALE)
+if meat_mask is None:
+    print("고기 마스크 이미지를 불러오지 못했습니다.")
+    exit()
+
+# 깊이 맵 불러오기
+depth_map = cv2.imread('depth_map.png', cv2.IMREAD_GRAYSCALE)
+if depth_map is None:
+    print("깊이 맵 이미지를 불러오지 못했습니다.")
+    exit()
+
+# 고기 영역의 깊이 값 추출
+meat_depth_values = depth_map[meat_mask > 0]
+
+# 고기 두께 계산 (깊이 값의 최대값과 최소값의 차이)
+depth_max = np.max(meat_depth_values)
+depth_min = np.min(meat_depth_values)
+meat_thickness_px = depth_max - depth_min
+
+# 고기 두께를 실제 거리로 변환 (밀리미터 단위)
+meat_thickness_mm = meat_thickness_px * mm_per_pixel
+
+print(f"고기 두께 (픽셀): {meat_thickness_px}")
+print(f"고기 두께 (밀리미터): {meat_thickness_mm:.2f} mm")
