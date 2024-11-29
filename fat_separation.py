@@ -1,15 +1,16 @@
 import os
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 
 # 원본 이미지 경로 설정
-img_path = 'test.png'
+img_path = './testpng/test.jpeg'
 
 # 마스크 이미지 경로 설정
-mask_path = 'maskedtest.png'
+mask_path = './testpng/maskedtest.png'
 
 # 이미지 열기 (컬러 이미지로)
 image = Image.open(img_path).convert("RGB")
+image = ImageOps.exif_transpose(image)  # EXIF 회전 정보 적용
 
 # 마스크 이미지 열기 (그레이스케일로 변환)
 mask_image = Image.open(mask_path).convert("L")   
@@ -60,7 +61,7 @@ binary_np[mask_np == 0] = 0
 binary_image = Image.fromarray(binary_np)
 
 # 저장할 디렉토리 경로 설정
-save_label_dir = 'fat_separation/label/'
+save_label_dir = 'fat_separation/mask/'
 
 # 저장 경로 생성 (디렉토리가 존재하지 않으면 생성)
 os.makedirs(save_label_dir, exist_ok=True)
