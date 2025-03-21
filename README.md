@@ -108,6 +108,11 @@ This project developed a pipeline leveraging machine learning to estimate meat f
 
 This model has potential as a personal dietary management tool and can be developed into a meat quality control system in the food industry.
 
+## Contributors
+- JeongHwan Ryu
+- KwanHak Lee
+- KyeongWon Min
+
 ## Reference
 
 - https://dl.acm.org/doi/fullHtml/10.1145/3575879.3575975#fig5
