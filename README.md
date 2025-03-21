@@ -1,24 +1,116 @@
 # Fat-Protein-Calculation-AI
 
-### AI를 활용한 고기의 지방량과 단백질량 분석
+### AI-based Analysis of Meat Fat and Protein Content
 
 ## Background
-- 최근 몇 년 사이 헬스나 몸관리에 관심을 가지는 인구가 급격하게 늘어나면서, 식단 관리에도 관심을 가지는 사람들이 늘어남
-- 그러나, 대용량으로 고기를 구매할 시 제대로 된 지방량과 단백질량이 표기되어 있지 않은 경우가 많음
-- 특히 고기를 소분해 놓는 경우, 지방량과 단백질량에 대한 추정이 더 힘들어짐
+
+- In recent years, the interest in fitness and personal health management has significantly increased, leading to greater attention towards dietary management.
+- However, bulk purchases of meat often lack accurate labeling for fat and protein content.
+- Estimating fat and protein amounts becomes particularly challenging when meat is portioned and repackaged.
 
 ## Architecture
-![pci2022-18-fig8](https://github.com/user-attachments/assets/cdb36bf6-4985-4123-b21e-81e83d307148)
-- 첫 번째 U-Net 모델은 이미지에서 고기를 추출한다.
-- 두 번째 U-Net 모델은 고기가 마스크된 이미지에서 지방을 추출한다.
-- 이 후, 고기 마스크와 지방 마스크를 이용해 25cm의 눈금자를 스케일 마커로 사용하여 지방량과 단백질량을 계산한다.
+
+![Image](https://github.com/user-attachments/assets/93ea2e0b-21a7-42fc-b2e6-a2464f490429)
+
+- The first U-Net model segments the meat from the image.
+- The second U-Net model separates the fat from the meat.
+- Hand length is used as a scale marker to calculate pixels per centimeter.
+- Additionally, a depth estimation model generates a depth map from images, which is converted to absolute thickness using the hand length scale.
+- Subsequently, these values are input into the equations below to calculate the meat's fat content, and protein content is calculated by subtracting fat and water content.
+  ![Image](https://github.com/user-attachments/assets/2b340c78-bab3-48ab-a384-2a59ffa2429d)
+  ![Image](https://github.com/user-attachments/assets/98976063-f31f-4dd4-9dee-a07bc599e041)
+
+## Method
+
+We used SegFormer, a Transformer-based semantic segmentation model, after testing indicated superior performance compared to U-Net, DeepLabV3, and HRNet.
+
+The tables below present performance for meat segmentation and fat segmentation models respectively.
+
+| Model            | IoU Score | Dice Coefficient | Pixel Accuracy |
+| ---------------- | --------- | ---------------- | -------------- |
+| DeepLabV3        | 0.9528    | 0.9757           | 0.9866         |
+| HRNet            | 0.9426    | 0.9702           | 0.9856         |
+| SegFormer        | 0.9676    | 0.9834           | 0.9904         |
+| U-Net (baseline) | 0.9588    | 0.9789           | 0.9882         |
+
+| Model            | IoU Score | Dice Coefficient | Pixel Accuracy |
+| ---------------- | --------- | ---------------- | -------------- |
+| DeepLabV3        | 0.1722    | 0.2803           | 0.9337         |
+| HRNet            | 0.2182    | 0.3361           | 0.9492         |
+| SegFormer        | 0.2384    | 0.3641           | 0.9577         |
+| U-Net (baseline) | 0.2322    | 0.3571           | 0.9560         |
+
 ## Dataset
-- 인터넷에서 직접 'raw beef' 키워드에 대한 80개의 이미지를 수집하였다. (추후, 더 수집할 예정)
-- 그 후 Labelme 도구를 이용해 고기에 대한 라벨링을 진행하였다.
-- 지방에 대한 라벨링 같은 경우, 이미지를 흑백으로 변환 후, threshold 값을 사용(지방은 하얗다는 성질을 이용)하여 진행하였다.
-- 인터넷에서 수집한 80개의 사진에 대해 flip, rotation과 같은 데이터 증강 기법을 이용하여, 총 560개의 이미지 데이터 셋으로 학습을 진행하였다.
-- 수집한 데이터 셋에 대해 train set, valid set, test set을 0.7:0.15:0.15 비율로 나눠 모델을 훈련하고 검증하였다.
+
+- We collected 80 images directly from the internet for keywords like "raw beef" and "raw pork".
+- Labeled meat areas using Labelme.
+- For fat labeling, images were converted to grayscale, and threshold values were applied (utilizing the whiteness of fat).
+- Using data augmentation techniques (flip, rotation) on the 80 beef and 79 pork images collected, we created 560 beef images and 553 pork images.
+- Dataset was divided into train, validation, and test sets with a 0.7:0.15:0.15 ratio for model training and validation.
+
+## Result
+
+### 1. Separate Training for Pork and Beef
+
+The upper table represents meat segmentation, and the lower table represents fat segmentation.
+
+| Meat | IoU Score | Dice coefficient | Pixel Accuracy |
+| ---- | --------- | ---------------- | -------------- |
+| Beef | 0.9669    | 0.9830           | 0.9902         |
+| Pork | 0.9640    | 0.9816           | 0.9901         |
+
+| Meat | IoU Score | Dice coefficient | Pixel Accuracy |
+| ---- | --------- | ---------------- | -------------- |
+| Beef | 0.2233    | 0.3453           | 0.9522         |
+| Pork | 0.3160    | 0.4491           | 0.9598         |
+
+### 2. Combined Training for Pork and Beef
+
+| Meat | IoU Score | Dice coefficient | Pixel Accuracy |
+| ---- | --------- | ---------------- | -------------- |
+| Beef | 0.9669    | 0.9830           | 0.9902         |
+| Pork | 0.9640    | 0.9816           | 0.9901         |
+
+| Meat | IoU Score | Dice coefficient | Pixel Accuracy |
+| ---- | --------- | ---------------- | -------------- |
+| Beef | 0.2233    | 0.3453           | 0.9522         |
+| Pork | 0.3160    | 0.4491           | 0.9598         |
+
+The meat segmentation model performed better when trained jointly, but fat segmentation performance was better when trained separately. Joint training may enhance generalization for meat segmentation but not fat segmentation.
+
+## Example
+
+- Meat segmentation model (Beef)
+  ![Image](https://github.com/user-attachments/assets/8b448e89-e16c-4729-9c4d-d1fe38c0ce90)
+- Meat segmentation model (Pork)
+  ![Image](https://github.com/user-attachments/assets/85a833b8-cb3d-4b92-979a-a17211d26c4b)
+- Fat segmentation model (Beef)
+  ![Image](https://github.com/user-attachments/assets/75bbca74-d843-4ac2-a907-abbf675bee25)
+- Fat segmentation model (Pork)
+  ![Image](https://github.com/user-attachments/assets/62f333cd-173f-4271-a39a-0b1f618a185b)
+- Mediapipe library detecting hand landmarks
+  ![Image](https://github.com/user-attachments/assets/e42ebd7e-a5fc-41e4-bf0f-1238ca863544)
+  - Distance from fingertip to wrist is measured to calculate pixels per centimeter.
+- Depth map generated by MiDaS model
+  ![Image](https://github.com/user-attachments/assets/1bd6f73e-74bc-4f5c-95f4-9ae8b61afbae)
+  - Brighter regions indicate greater thickness.
+  - The relative thickness is converted to absolute thickness using pixels per centimeter, allowing estimation of meat thickness.
+  - Using this pipeline, we obtained 26.40g of fat and 16.19g of protein from an image.
+
+## Discussion
+
+- Improved methods for more accurate fat segmentation are needed.
+- User-friendly interfaces like mobile applications should be provided.
+
+## Conclusion
+
+This project developed a pipeline leveraging machine learning to estimate meat fat and protein content using images and hand length. Despite dataset limitations affecting generalization, the results demonstrate practicality and effectiveness.
+
+This model has potential as a personal dietary management tool and can be developed into a meat quality control system in the food industry.
+
 ## Reference
+
 - https://dl.acm.org/doi/fullHtml/10.1145/3575879.3575975#fig5
-- https://arxiv.org/abs/1505.04597
-- https://ieeexplore.ieee.org/document/4767851
+- https://arxiv.org/abs/2105.15203
+- https://mediapipe.readthedocs.io/en/latest/solutions/hands.html
+- https://github.com/isl-org/MiDaS
